@@ -1,11 +1,12 @@
+from fastapi import FastAPI, WebSocket, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import os
 import uuid
 import subprocess
 import json
-from fastapi import FastAPI, WebSocket, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 import asyncio
+import time
 
 app = FastAPI()
 
@@ -33,8 +34,9 @@ async def websocket_endpoint(websocket: WebSocket, client_id: int):
         del active_websockets[client_id]
 
 async def process_json_and_generate_audio(data):
+    model = "en_US-lessac-medium"
     piper_input = json.dumps(data)
-    piper_command = ["piper", "--json-input", "--cuda"]
+    piper_command = ["piper", "--json-input", "--model", model, "--cuda"]
     output_file = os.path.join(AUDIO_FOLDER, f"{uuid.uuid4()}.wav")
     data['output_file'] = output_file
 
@@ -57,12 +59,10 @@ async def serve_audio(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path)
 
-# Serve index.html for the root URL
 @app.get("/")
 async def read_root():
     return FileResponse('static/index.html')
 
-# Periodic cleanup of old audio files
 async def cleanup_old_audio_files():
     now = time.time()
     for file in os.listdir(AUDIO_FOLDER):
@@ -73,9 +73,15 @@ async def cleanup_old_audio_files():
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
 
-# Run the cleanup every hour
 @app.on_event("startup")
-async def start_cleanup_task():
+async def on_startup():
+    asyncio.create_task(run_periodic_cleanup())
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    pass  # No specific shutdown logic required
+
+async def run_periodic_cleanup():
     while True:
         await asyncio.sleep(3600)  # Wait for 1 hour
         await cleanup_old_audio_files()
