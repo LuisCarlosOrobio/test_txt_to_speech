@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text to Speech</title>
+    <script>
+        let ws;
+
+        function connectWebSocket() {
+            // Dynamically create the WebSocket URL based on the current location
+            ws = new WebSocket('wss://' + window.location.host + '/ws/1');
+
+            ws.onopen = function(event) {
+                console.log("Connected to WebSocket");
+            };
+
+            ws.onmessage = function(event) {
+                playAudioBlob(event.data);
+            };
+
+            ws.onerror = function(error) {
+                console.error("WebSocket Error: ", error);
+            };
+
+            ws.onclose = function(event) {
+                console.log("WebSocket connection closed: ", event);
+            };
+        }
+
+        function sendText() {
+            const textInput = document.getElementById("textInput").value;
+            const data = { text: textInput }; // Adjust this structure as per your backend's expectation
+            ws.send(JSON.stringify(data));
+        }
+
+        function playAudioBlob(blobData) {
+            const blob = new Blob([blobData], { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(blob);
+            const audio = new Audio(audioUrl);
+            audio.play();
+        }
+
+        window.onload = connectWebSocket;
+    </script>
+</head>
+<body>
+    <h1>Text to Speech Converter</h1>
+    <input type="text" id="textInput" placeholder="Enter text here">
+    <button onclick="sendText()">Convert to Speech</button>
+</body>
+</html>
+
