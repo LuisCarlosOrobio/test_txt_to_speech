@@ -34,7 +34,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: int):
 
 async def process_json_and_generate_audio(data):
     piper_input = json.dumps(data)
-    piper_command = ["piper", "--json-input"]
+    piper_command = ["piper", "--json-input", "--cuda"]
     output_file = os.path.join(AUDIO_FOLDER, f"{uuid.uuid4()}.wav")
     data['output_file'] = output_file
 
@@ -83,4 +83,3 @@ async def start_cleanup_task():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
