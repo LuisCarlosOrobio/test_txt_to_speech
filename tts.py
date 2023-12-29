@@ -3,7 +3,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 import uuid
-import subprocess
 import json
 import asyncio
 import time
@@ -40,10 +39,16 @@ async def process_json_and_generate_audio(data):
     output_file = os.path.join(AUDIO_FOLDER, f"{uuid.uuid4()}.wav")
     data['output_file'] = output_file
 
-    with subprocess.Popen(piper_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE) as process:
-        process.stdin.write(piper_input.encode())
-        process.stdin.close()
-        await process.wait()
+    # Use asyncio.create_subprocess_exec for async subprocess
+    process = await asyncio.create_subprocess_exec(
+        *piper_command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE
+    )
+    process.stdin.write(piper_input.encode())
+    await process.stdin.drain()
+    process.stdin.close()
+    await process.wait()
 
     return output_file
 
@@ -73,11 +78,13 @@ async def cleanup_old_audio_files():
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
 
-@app.on_event("startup")
+# Use the new decorator for startup events
+@app.on_startup
 async def on_startup():
     asyncio.create_task(run_periodic_cleanup())
 
-@app.on_event("shutdown")
+# Use the new decorator for shutdown events
+@app.on_shutdown
 async def on_shutdown():
     pass  # No specific shutdown logic required
 
