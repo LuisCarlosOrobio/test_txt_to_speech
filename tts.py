@@ -33,22 +33,23 @@ async def websocket_endpoint(websocket: WebSocket, client_id: int):
         del active_websockets[client_id]
 
 async def process_json_and_generate_audio(data):
-    model = "/root/piper-voices/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+    model = "en_US-lessac-medium"
     piper_input = json.dumps(data)
+    piper_command = ["piper", "--json-input", "--model", model, "--cuda"]
     output_file = os.path.join(AUDIO_FOLDER, f"{uuid.uuid4()}.wav")
-    piper_command = ["piper", "--json-input", "--model", model, "--cuda", f"--output_file {output_file}"]
-
-    with subprocess.Popen(piper_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
-        process.stdin.write(piper_input.encode())
-        process.stdin.close()
-        await process.wait()
-
-        # Error handling
-        stdout, stderr = process.communicate()
-        if stderr:
-            print(f"Piper error: {stderr.decode()}")
-
     data['output_file'] = output_file
+
+    # Use asyncio.create_subprocess_exec for async subprocess
+    process = await asyncio.create_subprocess_exec(
+        *piper_command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE
+    )
+    process.stdin.write(piper_input.encode())
+    await process.stdin.drain()
+    process.stdin.close()
+    await process.wait()
+
     return output_file
 
 async def send_audio_file(websocket: WebSocket, file_path):
