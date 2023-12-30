@@ -26,29 +26,42 @@ async def websocket_endpoint(websocket: WebSocket, client_id: int):
         while True:
             data = await websocket.receive_json()
             audio_file = await process_json_and_generate_audio(data)
-            await send_audio_file(active_websockets[client_id], audio_file)
+            if audio_file:  # Check if file was successfully created
+                await send_audio_file(active_websockets[client_id], audio_file)
     except Exception as e:
         print(f"Error: {e}")
     finally:
         del active_websockets[client_id]
 
 async def process_json_and_generate_audio(data):
-    model = "en_US-lessac-medium"
+    model = "/root/piper-voices/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
     piper_input = json.dumps(data)
-    piper_command = ["piper", "--json-input", "--model", model, "--cuda"]
+    print(f"Input data for piper: {piper_input}")  # Log input data
+
+    piper_command = ["piper", "--json-input", "--model", model, "--use-cuda"]
     output_file = os.path.join(AUDIO_FOLDER, f"{uuid.uuid4()}.wav")
     data['output_file'] = output_file
 
-    # Use asyncio.create_subprocess_exec for async subprocess
     process = await asyncio.create_subprocess_exec(
         *piper_command,
         stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
     )
     process.stdin.write(piper_input.encode())
     await process.stdin.drain()
     process.stdin.close()
-    await process.wait()
+
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        print(f"piper command failed with return code {process.returncode}")
+        print(f"Standard Output: {stdout.decode()}")
+        print(f"Standard Error: {stderr.decode()}")
+        return None
+
+    if not os.path.exists(output_file):
+        print(f"Expected audio file was not created: {output_file}")
+        return None
 
     return output_file
 
@@ -78,13 +91,11 @@ async def cleanup_old_audio_files():
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
 
-# Use the new decorator for startup events
-@app.on_startup
+@app.on_event("startup")
 async def on_startup():
     asyncio.create_task(run_periodic_cleanup())
 
-# Use the new decorator for shutdown events
-@app.on_shutdown
+@app.on_event("shutdown")
 async def on_shutdown():
     pass  # No specific shutdown logic required
 
