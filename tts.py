@@ -26,42 +26,48 @@ async def websocket_endpoint(websocket: WebSocket, client_id: int):
         while True:
             data = await websocket.receive_json()
             audio_file = await process_json_and_generate_audio(data)
-            if audio_file:  # Check if file was successfully created
-                await send_audio_file(active_websockets[client_id], audio_file)
+            await send_audio_file(active_websockets[client_id], audio_file)
     except Exception as e:
         print(f"Error: {e}")
     finally:
         del active_websockets[client_id]
 
 async def process_json_and_generate_audio(data):
-    model = "/root/piper-voices/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
-    piper_input = json.dumps(data)
-    print(f"Input data for piper: {piper_input}")  # Log input data
+    # Extract the text content from the received JSON data
+    text_to_speak = data.get("text", "")
 
-    piper_command = ["piper", "--json-input", "--model", model, "--use-cuda"]
+    # Prepare the JSON input for piper, containing only the text to be synthesized
+    piper_input = json.dumps({"text": text_to_speak})
+
+    # Specify the model and output file as before
+    model = "/root/piper-voices/en/en_US/lessac/medium/en_US-lessac-medium.onnx"  # or dynamically determined
     output_file = os.path.join(AUDIO_FOLDER, f"{uuid.uuid4()}.wav")
-    data['output_file'] = output_file
 
+    # Prepare the piper command
+    piper_command = [
+        "piper",
+        "--model", model,
+        "--output_file", output_file,
+        "--json-input"  # Since we are providing JSON input
+    ]
+
+    # Create an asynchronous subprocess to execute the piper command
     process = await asyncio.create_subprocess_exec(
         *piper_command,
         stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        stdout=asyncio.subprocess.PIPE
     )
+
+    # Write the modified JSON input to piper's stdin
     process.stdin.write(piper_input.encode())
     await process.stdin.drain()
     process.stdin.close()
-
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        print(f"piper command failed with return code {process.returncode}")
-        print(f"Standard Output: {stdout.decode()}")
-        print(f"Standard Error: {stderr.decode()}")
-        return None
+    await process.wait()
 
     if not os.path.exists(output_file):
-        print(f"Expected audio file was not created: {output_file}")
-        return None
+        print(f"File not found: {output_file}")
+    else:
+        print(f"File successfully created: {output_file}")
 
     return output_file
 
@@ -90,7 +96,6 @@ async def cleanup_old_audio_files():
                 os.remove(file_path)
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
-
 @app.on_event("startup")
 async def on_startup():
     asyncio.create_task(run_periodic_cleanup())
